@@ -1,0 +1,15 @@
+{
+  "input_dim": 6,
+  "plds_s": [
+    1.525,
+    2.025,
+    2.525,
+    3.025,
+    3.525,
+    4.025
+  ],
+  "max_epochs": 200,
+  "patience": 20,
+  "loss": "MAE",
+  "noise": "dense SD Rician mc+ml"
+}

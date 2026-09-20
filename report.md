@@ -65,3 +65,4 @@ To determine the true algorithmic capacity of the networks without the confoundi
 
 ## 5. Conclusions
 The experiments demonstrate that reducing the number of PLDs from 6 to 3 is a highly viable strategy. While a minor penalty exists in CBF estimation accuracy (a ~0.7 ml/100g/min increase in Mean Absolute Error at SNR=10), the 3-PLD DNN maintains extremely high correlation (R² > 0.96) with the ground truth. This suggests that accelerating ASL MRI acquisitions by halving the delay samples is practical when paired with robust deep learning estimation techniques.
+

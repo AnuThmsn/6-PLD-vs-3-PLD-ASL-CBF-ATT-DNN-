@@ -1,3 +1,4 @@
+"""Generate and execute the selected 3-PLD SNR robustness notebook."""
 """Generate and execute the selected 3-PLD SNR robustness notebook (Inference Only)."""
 import nbformat as nbf
 import itertools
@@ -8,6 +9,8 @@ cells = []
 
 # CELL 0 - Intro
 cells.append(nbf.v4.new_markdown_cell("""\
+# Selected 3-PLD SNR Robustness
+**Objective:** Evaluate the robustness of the locked optimal 3-PLD configuration `[0, 2, 3]` across varying noise conditions (SNR 10 to 100).
 # Selected 3-PLD SNR Robustness (Inference Only)
 **Objective:** Evaluate the robustness of the *already trained and locked* 6-PLD baseline and the optimal 3-PLD configuration `[0, 2, 3]` across varying noise conditions (SNR 5 to 80).
 """))
@@ -20,6 +23,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
 import matplotlib
@@ -34,14 +38,26 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Device: {device}")
 
 cfg = SimulationConfig()
+SEED = 42
 
 EXPERIMENT_CONFIG = {
+    "n_train": 100000,
+    "n_val": 10000,
     "n_test": 10000,
+    "train_seed": SEED + 10,
+    "val_seed": SEED + 20,
     "test_seed": 999,
+    "snrs": [10, 20, 30, 40, 50, 60, 80, 100],
     "snrs": [5, 10, 20, 30, 40, 60, 80],
     "plds_6": list(range(6)),
     "plds_3_locked": [0, 2, 3],
+    "batch_size": 512,
+    "lr": 1e-3,
+    "patience": 20,
+    "max_epochs": 200,
     "cbf_width": 50,
+    "att_width": 100,
+    "grad_clip": 1.0
     "att_width": 100
 }
 
@@ -60,6 +76,10 @@ class StandardizedNet(nn.Module):
             layers += [nn.Linear(width, width), nn.ELU()]
         layers.append(nn.Linear(width, 1))
         self.backbone = nn.Sequential(*layers)
+        for layer in self.backbone:
+            if isinstance(layer, nn.Linear):
+                nn.init.kaiming_normal_(layer.weight, nonlinearity="relu")
+                nn.init.zeros_(layer.bias)
 
     def forward(self, x):
         return self.backbone(x)
@@ -73,8 +93,53 @@ def calc_metrics(y_true, y_pred):
         "Pearson": float(np.corrcoef(y_true, y_pred)[0, 1]),
         "Bias": float(np.mean(e)),
     }
+
+def train_net(net, X_tr, Y_tr, X_va, Y_va):
+    train_loader = DataLoader(TensorDataset(torch.from_numpy(X_tr), torch.from_numpy(Y_tr[:, None])), batch_size=EXPERIMENT_CONFIG["batch_size"], shuffle=True)
+    val_loader = DataLoader(TensorDataset(torch.from_numpy(X_va), torch.from_numpy(Y_va[:, None])), batch_size=EXPERIMENT_CONFIG["batch_size"])
+    
+    opt = torch.optim.Adam(net.parameters(), lr=EXPERIMENT_CONFIG["lr"])
+    loss_fn = nn.L1Loss()
+    best_val = float('inf')
+    best_state = copy.deepcopy(net.state_dict())
+    stale = 0
+    hist = []
+    
+    for epoch in range(1, EXPERIMENT_CONFIG["max_epochs"] + 1):
+        net.train()
+        train_loss = 0.0
+        for xb, yb in train_loader:
+            opt.zero_grad()
+            loss = loss_fn(net(xb.to(device)), yb.to(device))
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(net.parameters(), EXPERIMENT_CONFIG["grad_clip"])
+            opt.step()
+            train_loss += loss.item()
+        train_loss /= len(train_loader)
+        
+        net.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for xb, yb in val_loader:
+                val_loss += loss_fn(net(xb.to(device)), yb.to(device)).item()
+        val_loss /= len(val_loader)
+        
+        hist.append({"epoch": epoch, "train_mae": train_loss, "validation_mae": val_loss})
+        
+        if val_loss < best_val:
+            best_val = val_loss
+            best_state = copy.deepcopy(net.state_dict())
+            stale = 0
+        else:
+            stale += 1
+            if stale >= EXPERIMENT_CONFIG["patience"]:
+                break
+                
+    net.load_state_dict(best_state)
+    return pd.DataFrame(hist)
 """))
 
+# CELL 3 - The SNR Sweep
 # CELL 3 - The SNR Inference Sweep
 cells.append(nbf.v4.new_code_cell("""\
 out_root = project_root / "results" / "snr_robustness"
@@ -89,39 +154,72 @@ norm_3 = np.load(model_dir_3 / "normalization.npz")
 for snr in EXPERIMENT_CONFIG["snrs"]:
     print(f"\\n{'='*60}\\n  EVALUATING SNR: {snr}\\n{'='*60}")
     
+    # 1. Generate data for this specific SNR
+    seed_everything(SEED)
+    X_tr_full, Y_tr, _ = generate_dataset(EXPERIMENT_CONFIG["n_train"], cfg, EXPERIMENT_CONFIG["train_seed"], snr=float(snr))
+    X_va_full, Y_va, _ = generate_dataset(EXPERIMENT_CONFIG["n_val"], cfg, EXPERIMENT_CONFIG["val_seed"], snr=float(snr))
+    X_te_full, Y_te, _ = generate_dataset(EXPERIMENT_CONFIG["n_test"], cfg, EXPERIMENT_CONFIG["test_seed"], snr=float(snr))
     # 1. Generate EXACT SAME underlying matched data for this specific SNR
     # Crucial: By passing np.full(), we bypass the bug that randomizes the SNR.
     seed_everything(EXPERIMENT_CONFIG["test_seed"])
     snr_array = np.full(EXPERIMENT_CONFIG["n_test"], float(snr), dtype=np.float32)
     X_te_full, Y_te, _ = generate_dataset(EXPERIMENT_CONFIG["n_test"], cfg, EXPERIMENT_CONFIG["test_seed"], snr=snr_array)
     
+    # Target stats ONLY from training subset
+    CBF_mean, CBF_std = float(Y_tr[:, 0].mean()), float(Y_tr[:, 0].std() + 1e-8)
+    ATT_mean, ATT_std = float(Y_tr[:, 1].mean()), float(Y_tr[:, 1].std() + 1e-8)
+    
+    Y_tr_norm_cbf = ((Y_tr[:, 0] - CBF_mean) / CBF_std).astype('float32')
+    Y_tr_norm_att = ((Y_tr[:, 1] - ATT_mean) / ATT_std).astype('float32')
+    Y_va_norm_cbf = ((Y_va[:, 0] - CBF_mean) / CBF_std).astype('float32')
+    Y_va_norm_att = ((Y_va[:, 1] - ATT_mean) / ATT_std).astype('float32')
+    
     snr_dir = out_root / f"snr_{snr}"
     snr_dir.mkdir(exist_ok=True)
     
+    for cfg_name, indices in [("6_pld", EXPERIMENT_CONFIG["plds_6"]), ("3_pld", EXPERIMENT_CONFIG["plds_3_locked"])]:
     for cfg_name, indices, model_dir, norm in [
         ("6_pld", EXPERIMENT_CONFIG["plds_6"], model_dir_6, norm_6), 
         ("3_pld", EXPERIMENT_CONFIG["plds_3_locked"], model_dir_3, norm_3)
     ]:
         print(f"  -- Model: {cfg_name} --")
         
+        # Input stats ONLY from training subset
+        X_tr = X_tr_full[:, indices]
+        X_va = X_va_full[:, indices]
         # Apply the EXACT normalization derived from the 100k training
         X_te = X_te_full[:, indices]
         X_te_n = ((X_te - norm["X_mean"]) / norm["X_std"]).astype('float32')
         
+        X_mean = X_tr.mean(0, keepdims=True).astype('float32')
+        X_std = X_tr.std(0, keepdims=True).astype('float32') + 1e-8
+        
+        X_tr_n = ((X_tr - X_mean) / X_std).astype('float32')
+        X_va_n = ((X_va - X_mean) / X_std).astype('float32')
+        X_te_n = ((X_te - X_mean) / X_std).astype('float32')
+        
         dim = len(indices)
         
+        # CBF
         # Load and Inference CBF
         cbf_net = StandardizedNet(dim, EXPERIMENT_CONFIG["cbf_width"]).to(device)
+        cbf_hist = train_net(cbf_net, X_tr_n, Y_tr_norm_cbf, X_va_n, Y_va_norm_cbf)
         cbf_net.load_state_dict(torch.load(model_dir / "cbf_model.pt", map_location=device))
         cbf_net.eval()
         
+        # ATT
         # Load and Inference ATT
         att_net = StandardizedNet(dim, EXPERIMENT_CONFIG["att_width"]).to(device)
+        att_hist = train_net(att_net, X_tr_n, Y_tr_norm_att, X_va_n, Y_va_norm_att)
         att_net.load_state_dict(torch.load(model_dir / "att_model.pt", map_location=device))
         att_net.eval()
         
+        # Predict on Test (Locked until now)
+        cbf_net.eval(); att_net.eval()
         with torch.no_grad():
             xt = torch.from_numpy(X_te_n).to(device)
+            cbf_pred = cbf_net(xt).cpu().squeeze(1).numpy() * CBF_std + CBF_mean
+            att_pred = att_net(xt).cpu().squeeze(1).numpy() * ATT_std + ATT_mean
             cbf_pred = cbf_net(xt).cpu().squeeze(1).numpy() * float(norm["CBF_std"]) + float(norm["CBF_mean"])
             att_pred = att_net(xt).cpu().squeeze(1).numpy() * float(norm["ATT_std"]) + float(norm["ATT_mean"])
             
@@ -140,17 +238,31 @@ for snr in EXPERIMENT_CONFIG["snrs"]:
         dir_path = snr_dir / cfg_name
         dir_path.mkdir(exist_ok=True)
         
+        torch.save(cbf_net.state_dict(), dir_path / "cbf_model.pt")
+        torch.save(att_net.state_dict(), dir_path / "att_model.pt")
+        cbf_hist.to_csv(dir_path / "cbf_training_history.csv", index=False)
+        att_hist.to_csv(dir_path / "att_training_history.csv", index=False)
         np.savez(dir_path / "test_predictions.npz", y_true=Y_te, y_pred=preds)
+        np.savez(dir_path / "normalization.npz", X_mean=X_mean, X_std=X_std, CBF_mean=CBF_mean, CBF_std=CBF_std, ATT_mean=ATT_mean, ATT_std=ATT_std)
         pd.DataFrame([m_cbf, m_att]).to_csv(dir_path / "metrics.csv", index=False)
         
         config = {
+            "snr": snr, "model": cfg_name, "indices": indices, "cbf_width": 50, "att_width": 100,
+            "lambda_fix_applied": True, "cbf_best_epoch": int(cbf_hist["validation_mae"].idxmin()),
+            "att_best_epoch": int(att_hist["validation_mae"].idxmin())
             "snr": snr, "model": cfg_name, "indices": indices, "checkpoint_path": str(model_dir)
         }
         with open(dir_path / "config.json", "w") as f:
             json.dump(config, f, indent=2)
+            
+        # FORCE GC TO SAVE RAM/C-DRIVE
+        del cbf_net, att_net, cbf_hist, att_hist, X_tr, X_va, X_te, X_tr_n, X_va_n, X_te_n
+        gc.collect()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
 
 df = pd.DataFrame(all_results)
 df.to_csv(out_root / "snr_summary.csv", index=False)
+print("\\nAll SNR training completed.")
 print("\\nAll SNR inferences completed.")
 """))
 
@@ -162,6 +274,10 @@ df = pd.read_csv(out_root / "snr_summary.csv")
 degradations = []
 for snr in EXPERIMENT_CONFIG["snrs"]:
     sub = df[df.SNR == snr]
+    cbf_6 = sub[(sub.Model == "6_pld") & (sub.Parameter == "CBF")].iloc[0]["MAE"]
+    cbf_3 = sub[(sub.Model == "3_pld") & (sub.Parameter == "CBF")].iloc[0]["MAE"]
+    att_6 = sub[(sub.Model == "6_pld") & (sub.Parameter == "ATT")].iloc[0]["MAE"]
+    att_3 = sub[(sub.Model == "3_pld") & (sub.Parameter == "ATT")].iloc[0]["MAE"]
     cbf_6 = sub[(sub.Model == "6_pld") & (sub.Parameter == "CBF")].iloc[0]
     cbf_3 = sub[(sub.Model == "3_pld") & (sub.Parameter == "CBF")].iloc[0]
     att_6 = sub[(sub.Model == "6_pld") & (sub.Parameter == "ATT")].iloc[0]
@@ -169,6 +285,8 @@ for snr in EXPERIMENT_CONFIG["snrs"]:
     
     degradations.append({
         "SNR": snr,
+        "CBF_MAE_Degradation_%": (cbf_3 - cbf_6) / cbf_6 * 100,
+        "ATT_MAE_Degradation_%": (att_3 - att_6) / att_6 * 100
         "CBF_6_MAE": cbf_6["MAE"],
         "CBF_3_MAE": cbf_3["MAE"],
         "CBF_Abs_Diff": cbf_3["MAE"] - cbf_6["MAE"],
@@ -181,6 +299,7 @@ for snr in EXPERIMENT_CONFIG["snrs"]:
 df_deg = pd.DataFrame(degradations)
 df_deg.to_csv(out_root / "relative_degradations.csv", index=False)
 
+# Generate Convergence Plots
 display(Markdown("### Final Results Summary"))
 display(df)
 display(Markdown("### Degradation Summary"))
@@ -201,10 +320,12 @@ for param in ["CBF", "ATT"]:
         ax.plot(m3["SNR"], m3[metric], 's-', label="Selected 3-PLD")
         ax.set_xlabel("SNR")
         ax.set_ylabel(metric)
+        ax.set_title(f"{param} {metric} across SNR")
         ax.set_title(f"{param} {metric} vs SNR")
         ax.legend()
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
+        fig.savefig(out_root / f"{param}_{metric}_vs_SNR.png", dpi=150)
         fig.savefig(plot_dir / f"{param}_{metric}_vs_SNR.png", dpi=150)
         plt.close(fig)
 
@@ -213,33 +334,42 @@ fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 ax1.plot(df_deg["SNR"], df_deg["CBF_MAE_Degradation_%"], 'd-', color='red')
 ax1.set_xlabel("SNR")
 ax1.set_ylabel("3-PLD CBF MAE % Increase (Degradation)")
+ax1.set_title("CBF Relative Degradation")
 ax1.set_title("CBF Relative Degradation vs SNR")
 ax1.grid(True, alpha=0.3)
 
 ax2.plot(df_deg["SNR"], df_deg["ATT_MAE_Degradation_%"], 'd-', color='orange')
 ax2.set_xlabel("SNR")
 ax2.set_ylabel("3-PLD ATT MAE % Increase (Degradation)")
+ax2.set_title("ATT Relative Degradation")
 ax2.set_title("ATT Relative Degradation vs SNR")
 ax2.grid(True, alpha=0.3)
 
 fig.tight_layout()
+fig.savefig(out_root / "relative_degradation_vs_SNR.png", dpi=150)
 fig.savefig(plot_dir / "relative_degradation_vs_SNR.png", dpi=150)
 plt.close(fig)
+print("Plots generated.")
 print("Plots generated in results/snr_robustness/plots/")
 """))
 
 # CELL 5 - Independent Verification
 cells.append(nbf.v4.new_code_cell("""\
 print("\\n--- INDEPENDENT CHECKPOINT VERIFICATION ---")
+
 # To prove no data leakage and pure math
 verification_snrs = [10, 40, 80]
 for snr in verification_snrs:
     print(f"\\nVerifying SNR {snr}...")
     
     # Rebuild test set from scratch
+    _, Y_verify, _ = generate_dataset(EXPERIMENT_CONFIG["n_test"], cfg, EXPERIMENT_CONFIG["test_seed"], snr=float(snr))
+    # Full un-normalized X to strictly slice
+    X_te_full, _, _ = generate_dataset(EXPERIMENT_CONFIG["n_test"], cfg, EXPERIMENT_CONFIG["test_seed"], snr=float(snr))
     snr_array = np.full(EXPERIMENT_CONFIG["n_test"], float(snr), dtype=np.float32)
     X_te_full, Y_verify, _ = generate_dataset(EXPERIMENT_CONFIG["n_test"], cfg, EXPERIMENT_CONFIG["test_seed"], snr=snr_array)
     
+    for name, indices in [("6_pld", EXPERIMENT_CONFIG["plds_6"]), ("3_pld", EXPERIMENT_CONFIG["plds_3_locked"])]:
     for name, indices, model_dir, norm in [
         ("6_pld", EXPERIMENT_CONFIG["plds_6"], model_dir_6, norm_6), 
         ("3_pld", EXPERIMENT_CONFIG["plds_3_locked"], model_dir_3, norm_3)
@@ -247,15 +377,18 @@ for snr in verification_snrs:
         snr_dir = out_root / f"snr_{snr}" / name
         
         saved_preds = np.load(snr_dir / "test_predictions.npz")["y_pred"]
+        norm = np.load(snr_dir / "normalization.npz")
         
         X_ver = X_te_full[:, indices]
         X_ver_n = ((X_ver - norm["X_mean"]) / norm["X_std"]).astype('float32')
         
         dim = X_ver.shape[1]
         cbf_check = StandardizedNet(dim, EXPERIMENT_CONFIG["cbf_width"]).to(device)
+        cbf_check.load_state_dict(torch.load(snr_dir / "cbf_model.pt", map_location=device))
         cbf_check.load_state_dict(torch.load(model_dir / "cbf_model.pt", map_location=device))
         
         att_check = StandardizedNet(dim, EXPERIMENT_CONFIG["att_width"]).to(device)
+        att_check.load_state_dict(torch.load(snr_dir / "att_model.pt", map_location=device))
         att_check.load_state_dict(torch.load(model_dir / "att_model.pt", map_location=device))
         
         with torch.no_grad():
@@ -278,3 +411,4 @@ nb["cells"] = cells
 with open("notebooks/selected_3pld_snr_robustness.ipynb", "w", encoding="utf-8") as f:
     nbf.write(nb, f)
 print("Notebook build complete.")
+

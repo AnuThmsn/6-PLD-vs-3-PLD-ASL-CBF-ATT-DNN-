@@ -59,3 +59,4 @@ At extreme, non-diagnostic noise levels (SNR = 5), the 3-PLD network struggles s
 - **Result:** Max absolute differences were perfectly $0.000$ across all tested checkpoints. No data leakage or test-set optimization occurred. The integrity of the inference loop is perfectly verified.
 
 All plots, tabular metrics, and inference predictions are saved in `results/snr_robustness/`.
+

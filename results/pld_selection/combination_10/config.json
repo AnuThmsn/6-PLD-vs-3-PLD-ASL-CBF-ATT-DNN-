@@ -1,0 +1,22 @@
+{
+  "Combination": "combination_10",
+  "Indices": [
+    1,
+    2,
+    3
+  ],
+  "PLDs": [
+    2.025,
+    2.525,
+    3.025
+  ],
+  "Val_CBF_MAE": 4.701174736022949,
+  "Val_CBF_RMSE": 6.186831474304199,
+  "Val_CBF_R2": 0.9545425772666931,
+  "Val_ATT_MAE": 0.3854380249977112,
+  "Val_ATT_RMSE": 0.530117392539978,
+  "Val_ATT_R2": 0.4616006016731262,
+  "CBF_Best_Epoch": 9,
+  "ATT_Best_Epoch": 24,
+  "Train_Duration_s": 262.441349029541
+}

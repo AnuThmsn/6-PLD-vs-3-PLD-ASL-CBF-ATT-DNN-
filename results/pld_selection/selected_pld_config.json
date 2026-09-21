@@ -1,0 +1,19 @@
+{
+  "selected_indices": [
+    0,
+    2,
+    3
+  ],
+  "selected_plds": [
+    1.525,
+    2.525,
+    3.025
+  ],
+  "combination_name": "combination_04",
+  "selection_metric": "validation_CBF_MAE",
+  "selection_protocol": "20-way exhaustive validation selection",
+  "training_samples": 100000,
+  "test_used_for_selection": false,
+  "Val_CBF_MAE": 3.623871088027954,
+  "Val_ATT_MAE": 0.24904152750968933
+}

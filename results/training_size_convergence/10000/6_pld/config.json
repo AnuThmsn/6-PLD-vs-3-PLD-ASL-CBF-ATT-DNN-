@@ -1,0 +1,17 @@
+{
+  "size": 10000,
+  "model": "6_pld",
+  "indices": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "cbf_width": 50,
+  "att_width": 100,
+  "lambda_fix_applied": true,
+  "cbf_best_epoch": 63,
+  "att_best_epoch": 23
+}

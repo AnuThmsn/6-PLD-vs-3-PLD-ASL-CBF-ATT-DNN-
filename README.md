@@ -19,7 +19,7 @@ We utilized a simulated ASL dataset based on standard kinetic models (Buxton) au
 
 ## 🧠 Neural Network Architecture
 We deployed identical Multi-Layer Perceptrons (MLPs) for all experiments, isolating the input dimension (the number of PLDs) as the sole experimental variable.
-- **Architecture:** Input Layer $\rightarrow$ 8 Hidden Layers $\rightarrow$ 1 Output Node.
+- **Architecture:** Input Layer $\rightarrow$ 9 Hidden Layers $\rightarrow$ 1 Output Node.
 - **Width:** 50 for the CBF model, 100 for the ATT model.
 - **Activation:** ELU (Exponential Linear Unit) for robust, noise-resilient gradient flow.
 - **Loss & Optimizer:** Mean Absolute Error (MAE) trained via Adam ($lr=10^{-3}$).

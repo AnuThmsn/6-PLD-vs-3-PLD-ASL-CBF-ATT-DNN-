@@ -121,3 +121,4 @@ The final cell in the notebook (`Cell 6: Independent Metric Verification`) reloa
 3. No hard-coded metrics exist in the pipeline.
 4. Old, broken simulations were archived, and models were retrained from scratch.
 5. All random seeds are fixed and provenance is saved to `config.json` for every model directory.
+

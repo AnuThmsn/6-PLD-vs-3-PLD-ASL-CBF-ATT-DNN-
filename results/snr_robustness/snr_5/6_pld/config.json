@@ -1,0 +1,13 @@
+{
+  "snr": 5,
+  "model": "6_pld",
+  "indices": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "checkpoint_path": "D:\\fiinal year project\\dnn_pld_reduction\\results\\pld_selection\\6_pld_baseline"
+}

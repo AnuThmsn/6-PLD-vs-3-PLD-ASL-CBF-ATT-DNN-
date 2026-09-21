@@ -1,0 +1,10 @@
+{
+  "snr": 30,
+  "model": "3_pld",
+  "indices": [
+    0,
+    2,
+    3
+  ],
+  "checkpoint_path": "D:\\fiinal year project\\dnn_pld_reduction\\results\\pld_selection\\combination_04"
+}

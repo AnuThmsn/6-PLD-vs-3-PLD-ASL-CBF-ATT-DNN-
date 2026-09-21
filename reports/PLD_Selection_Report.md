@@ -63,3 +63,4 @@ To strictly satisfy reproducibility constraints, an independent script reconstru
 - **6-PLD Max Absolute Difference:** `0.000e+00`
 - **3-PLD Max Absolute Difference:** `0.000e+00`
 - **Result:** Checkpoint provenances are perfectly mathematically verified.
+

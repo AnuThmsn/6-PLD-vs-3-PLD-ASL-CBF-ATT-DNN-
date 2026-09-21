@@ -40,7 +40,10 @@ def paper_signal(cbf, att_s, plds_s, cfg: SimulationConfig):
     plds = np.asarray(plds_s, dtype=np.float64)[None, :]
     delta = att[:, None]
     flow = (cbf / (6000.0 * cfg.lambda_blood))[:, None]
-    prefix = 2.0 * cfg.alpha * cfg.beta * cfg.t1_tissue_s * (1.0 / cfg.lambda_blood) * flow
+    # Buxton: ΔM = 2·α·β·T1t·(M0/λ)·f·exp(...)
+    # flow already contains cbf/(6000·λ), so prefix should NOT divide by λ again.
+    # Previous version had (1.0/λ)*flow which caused double-division (λ² bug).
+    prefix = 2.0 * cfg.alpha * cfg.beta * cfg.t1_tissue_s * flow
     first = np.exp(-np.maximum(plds - delta, 0.0) / cfg.t1_tissue_s)
     second = np.exp(-np.maximum(cfg.tau_s + plds - delta, 0.0) / cfg.t1_tissue_s)
     return cfg.scale * prefix * np.exp(-delta / cfg.t1_blood_s) * (first - second)

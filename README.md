@@ -55,3 +55,21 @@ This strongly suggests that halving the number of ASL delay acquisitions is a hi
 - `/src/simulation.py`: Centralized kinetic ASL generation and dataset processing.
 - `/results`: Checkpoints (`.pt`), saved `metrics.csv`, and training history logs.
 - `report.md`: Detailed engineering and architectural justification.
+
+
+## Experiment 7: Selected PLDs on ASL Signal Curves
+**Objective:** Visualize and quantify *where* the selected 3 PLDs ([1.525, 2.525, 3.025]) fall on the theoretical ASL kinetic signal evolution curve compared to the discarded PLDs, investigating why this combination yields optimal DNN performance.
+
+**Methodology:**
+- Generated dense (500-point) ASL signal curves across diverse physiological CBF/ATT conditions using the Buxton kinetic model.
+- Evaluated the position, normalized signal strength, and absolute slopes of the selected vs. discarded PLDs.
+- Performed randomized aggregate analysis over 100 cases to extract general properties of the PLD selection.
+
+**Key Findings:**
+1. **Early Arrival (PLD 1.525s):** The earliest measurement is strongly retained because it captures the crucial arrival slope, acting as the primary differentiator for short Arterial Transit Times (ATTs).
+2. **Kinetic Peak (PLD 2.525s):** This measurement sits at or immediately after the mean signal peak for central ATT distributions. Anchoring the maximum signal intensity is highly informative for Cerebral Blood Flow (CBF) scaling.
+3. **Decay Onset (PLD 3.025s):** This establishes the initial trajectory of the $ relaxation decay phase.
+4. **Discarded Tails (3.525s, 4.025s):** The deep decay phase is highly predictable (pure exponential) and carries the lowest signal-to-noise ratio. The combinatorial selection algorithm correctly identified these as redundant for a non-linear estimator.
+
+**Notebook:** 
+otebooks/07_selected_pld_signal_curve_analysis.ipynb

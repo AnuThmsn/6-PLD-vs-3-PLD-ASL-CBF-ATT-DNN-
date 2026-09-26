@@ -73,3 +73,22 @@ This strongly suggests that halving the number of ASL delay acquisitions is a hi
 
 **Notebook:** 
 otebooks/07_selected_pld_signal_curve_analysis.ipynb
+
+
+## Experiment 8: Physiological Reference-Point Analysis
+**Objective:** Verify whether the DNN's selected 3-PLD configuration physically samples complementary regions of the ASL kinetic curve across the entire physiological parameter domain.
+
+**Methodology:**
+- Generated highly dense ASL signal curves across a 36-point grid (CBF: 20-90, ATT: 0.5-3.0s).
+- Calculated partial derivatives (sensitivity to CBF and ATT) for all 6 PLDs.
+- Classified the mathematical location of each PLD relative to the global signal peak.
+
+**Key Findings:**
+- The mathematically selected 3-PLDs strictly correspond to the regions of maximal physical sensitivity:
+  - **PLD 1.525s:** Dominates ATT sensitivity on the rising edge.
+  - **PLD 2.525s:** Dominates CBF sensitivity at or near the kinetic maximum.
+  - **PLD 3.025s:** Samples the necessary inflection point into the decay trajectory.
+- The discarded late PLDs (3.525s, 4.025s) occupy the low-sensitivity deep $ tail across nearly all physiological conditions.
+
+**Notebook:** 
+otebooks/08_physiological_reference_pld_analysis.ipynb

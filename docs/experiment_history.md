@@ -17,3 +17,11 @@ otebooks/08b_physiological_reference_pld_audit.ipynb
 * **Findings:** Absolute error scales linearly with reference CBF (as it dictates a higher global noise variance). It peaks at reference ATT=1.6s because the simulated reference signal at PLD 2.0s happens to maximize there, injecting the highest absolute noise. Crucially, the 3-PLD relative degradation penalty (~10% for CBF, ~4% for ATT) remains highly stable across all noise regimes.
 * **Notebook:** 
 otebooks/09_reference_value_sensitivity.ipynb
+
+
+### Experiment 10: Architecture Exploration
+* **Date:** 2026-09-26
+* **Reason:** Evaluate if alternative architectures (Conv1D, Residual, Wider MLP, Multi-task) can improve estimation accuracy or overcome the 3-PLD vs 6-PLD performance gap.
+* **Findings:** All alternative architectures performed virtually identically to the Baseline MLP. The 3-PLD CBF degradation remained strictly ~11-12% across all models. This 'negative result' conclusively proves that the ~11% error gap is a hard mathematical information limit caused by dropping measurements in the presence of noise, and cannot be algorithmically 'fixed' by increasing network capacity or changing structural inductive biases.
+* **Notebook:** 
+otebooks/10_architecture_exploration.ipynb
